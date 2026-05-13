@@ -5,9 +5,7 @@ import (
 	"github.com/Arceus-7/matrix"
 )
 
-func main() {
-	fmt.Println("--- Matrix Basics ---")
-	
+func main() {	
 	// Create two 2x2 matrices using floats
 	a := matrix.MustNew([][]float64{
 		{1, 2},
