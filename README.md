@@ -4,7 +4,7 @@ A clean, generic, zero-dependency matrix math package for Go.
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/Arceus-7/matrix.svg)](https://pkg.go.dev/github.com/Arceus-7/matrix)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Arceus-7/matrix)](https://goreportcard.com/report/github.com/Arceus-7/matrix)
-[![codecov](https://codecov.io/gh/Arceus-7/matrix/graph/badge.svg)](https://codecov.io/gh/Arceus-7/matrix)
+[![codecov](https://codecov.io/gh/Arceus-7/MatrixPackage/graph/badge.svg)](https://codecov.io/gh/Arceus-7/MatrixPackage)
 ## Features
 
 - **Generic** — works with `int`, `float32`, `float64`, `complex128`, and more
