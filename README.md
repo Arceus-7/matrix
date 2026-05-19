@@ -2,7 +2,7 @@
 
 A clean, generic, zero-dependency matrix math package for Go.
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/Arceus-7/matrix.svg)](https://pkg.go.dev/github.com/Arceus-7/matrix)
+[![Go Reference](https://pkg.go.dev/badge/github.com/Arceus-7/MatrixPackage.svg)](https://pkg.go.dev/github.com/Arceus-7/MatrixPackage)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Arceus-7/MatrixPackage)](https://goreportcard.com/report/github.com/Arceus-7/MatrixPackage)
 [![codecov](https://codecov.io/gh/Arceus-7/MatrixPackage/graph/badge.svg)](https://codecov.io/gh/Arceus-7/MatrixPackage)
 ## Features
