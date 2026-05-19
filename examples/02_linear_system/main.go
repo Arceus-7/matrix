@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/Arceus-7/MatrixPackage"
+	"github.com/Arceus-7/matrix"
 )
 
 func main() {
