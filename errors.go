@@ -42,4 +42,9 @@ var (
 	// ErrNotImplemented is returned for operations that are planned but not
 	// yet implemented (e.g., SVD in v1).
 	ErrNotImplemented = errors.New("matrix: operation not yet implemented")
+
+	// ErrNotConverged is returned when an iterative algorithm (e.g., QR
+	// eigenvalue computation) fails to converge within the maximum number
+	// of iterations.
+	ErrNotConverged = errors.New("matrix: algorithm did not converge")
 )

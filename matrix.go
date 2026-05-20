@@ -16,8 +16,8 @@ var Epsilon = 1e-9
 // It supports integers, floats, and complex numbers.
 type Numeric interface {
 	~int | ~int8 | ~int16 | ~int32 | ~int64 |
-	~float32 | ~float64 |
-	~complex64 | ~complex128
+		~float32 | ~float64 |
+		~complex64 | ~complex128
 }
 
 // RealNumeric is a stricter constraint for operations that require
@@ -25,7 +25,7 @@ type Numeric interface {
 // Complex types are excluded because they lack a natural ordering.
 type RealNumeric interface {
 	~int | ~int8 | ~int16 | ~int32 | ~int64 |
-	~float32 | ~float64
+		~float32 | ~float64
 }
 
 // Float is a constraint for floating-point types only.
@@ -203,8 +203,51 @@ func (m *Matrix[T]) Data() [][]T {
 	return data
 }
 
+// Row returns the i-th row as a new 1×n matrix (deep copy, 0-indexed).
+// Returns ErrOutOfBounds if i is out of range.
+func (m *Matrix[T]) Row(i int) (*Matrix[T], error) {
+	if i < 0 || i >= m.rows {
+		return nil, ErrOutOfBounds
+	}
+	data := [][]T{make([]T, m.cols)}
+	copy(data[0], m.data[i])
+	return &Matrix[T]{data: data, rows: 1, cols: m.cols}, nil
+}
+
+// Col returns the j-th column as a new n×1 matrix (deep copy, 0-indexed).
+// Returns ErrOutOfBounds if j is out of range.
+func (m *Matrix[T]) Col(j int) (*Matrix[T], error) {
+	if j < 0 || j >= m.cols {
+		return nil, ErrOutOfBounds
+	}
+	data := make([][]T, m.rows)
+	for i := 0; i < m.rows; i++ {
+		data[i] = []T{m.data[i][j]}
+	}
+	return &Matrix[T]{data: data, rows: m.rows, cols: 1}, nil
+}
+
+// SubMatrix extracts the submatrix spanning rows [r0, r1) and columns [c0, c1).
+// Uses half-open ranges consistent with Go slice semantics.
+// Returns a deep copy — modifying the result does not affect the original.
+//
+// Returns ErrOutOfBounds if any index is out of range or if r0 >= r1 or c0 >= c1.
+func (m *Matrix[T]) SubMatrix(r0, r1, c0, c1 int) (*Matrix[T], error) {
+	if r0 < 0 || r1 > m.rows || r0 >= r1 || c0 < 0 || c1 > m.cols || c0 >= c1 {
+		return nil, ErrOutOfBounds
+	}
+	rows := r1 - r0
+	cols := c1 - c0
+	data := make([][]T, rows)
+	for i := 0; i < rows; i++ {
+		data[i] = make([]T, cols)
+		copy(data[i], m.data[r0+i][c0:c1])
+	}
+	return &Matrix[T]{data: data, rows: rows, cols: cols}, nil
+}
+
 // Equals returns true if two matrices have the same shape and identical elements.
-// For floating-point types, exact equality is used — see ApproxEquals for
+// For floating-point types, exact equality is used — use ApproxEquals for
 // epsilon-based comparison.
 func (m *Matrix[T]) Equals(other *Matrix[T]) bool {
 	if m.rows != other.rows || m.cols != other.cols {
@@ -213,6 +256,25 @@ func (m *Matrix[T]) Equals(other *Matrix[T]) bool {
 	for i := 0; i < m.rows; i++ {
 		for j := 0; j < m.cols; j++ {
 			if m.data[i][j] != other.data[i][j] {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// ApproxEquals returns true if two matrices have the same shape and all
+// corresponding elements differ by less than eps (in absolute value).
+//
+// This is essential when comparing matrices that result from floating-point
+// arithmetic, where exact equality (Equals) would produce false negatives.
+func (m *Matrix[T]) ApproxEquals(other *Matrix[T], eps float64) bool {
+	if m.rows != other.rows || m.cols != other.cols {
+		return false
+	}
+	for i := 0; i < m.rows; i++ {
+		for j := 0; j < m.cols; j++ {
+			if absFloat64(m.data[i][j]-other.data[i][j]) > eps {
 				return false
 			}
 		}

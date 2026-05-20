@@ -22,6 +22,28 @@ func (m *Matrix[T]) LU() (*Matrix[float64], *Matrix[float64], error) {
 	return L, U, err
 }
 
+// LUP performs LU decomposition with partial pivoting and also returns
+// the permutation matrix P.
+//
+// Returns (L, U, P, error) such that P*A = L*U.
+//
+// P is an n×n permutation matrix built from the row-swap history.
+// Use this when you need to verify or reconstruct the decomposition.
+func (m *Matrix[T]) LUP() (*Matrix[float64], *Matrix[float64], *Matrix[float64], error) {
+	L, U, perm, err := luWithPerm(m)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	n := m.rows
+	P := Zeros[float64](n, n)
+	for i := 0; i < n; i++ {
+		P.data[i][perm[i]] = 1.0
+	}
+
+	return L, U, P, nil
+}
+
 // luWithPerm performs LU decomposition with partial pivoting and returns
 // the permutation vector. perm[i] = j means row i of the original matrix
 // ended up at row j. This is used internally by Solve to correctly
@@ -177,6 +199,7 @@ func (m *Matrix[T]) QR() (*Matrix[float64], *Matrix[float64], error) {
 //
 // Returns eigenvalues as complex128 (real eigenvalues have zero imaginary part).
 // Returns ErrNotSquare if the matrix isn't square.
+// Returns ErrNotConverged if the algorithm fails to converge.
 //
 // Note: eigenvector computation is planned for v1.5.
 func (m *Matrix[T]) Eigen() ([]complex128, error) {
@@ -203,16 +226,18 @@ func (m *Matrix[T]) Eigen() ([]complex128, error) {
 	a := toFloat64Matrix(m)
 	maxIter := 1000
 
+	converged := false
 	for iter := 0; iter < maxIter; iter++ {
 		// Check for convergence: sub-diagonal elements near zero
-		converged := true
+		allSmall := true
 		for i := 0; i < n-1; i++ {
 			if math.Abs(a.data[i+1][i]) > Epsilon {
-				converged = false
+				allSmall = false
 				break
 			}
 		}
-		if converged {
+		if allSmall {
+			converged = true
 			break
 		}
 
@@ -249,6 +274,10 @@ func (m *Matrix[T]) Eigen() ([]complex128, error) {
 			rq.data[i][i] += shift
 		}
 		a = rq
+	}
+
+	if !converged {
+		return nil, ErrNotConverged
 	}
 
 	// Extract eigenvalues from the (quasi-)upper triangular form
@@ -357,14 +386,146 @@ func wilkinsonShift(a *Matrix[float64]) float64 {
 	return lambda2
 }
 
-// SVD performs Singular Value Decomposition.
+// SVD performs Singular Value Decomposition (thin SVD).
 //
 // Decomposes A = U * Σ * Vᵀ where:
-//   - U is an m×m orthogonal matrix (left singular vectors)
-//   - Σ is an m×n diagonal matrix (singular values)
-//   - V is an n×n orthogonal matrix (right singular vectors)
+//   - U is an m×k orthogonal matrix (left singular vectors)
+//   - Σ is a k×k diagonal matrix (singular values, non-negative, descending)
+//   - V is an n×k orthogonal matrix (right singular vectors)
+//   - k = min(m, n)
 //
-// This operation is planned for v1.5.
+// Algorithm: One-sided Jacobi SVD. Iteratively applies Jacobi rotations
+// to orthogonalize the columns of A, producing V and the singular values
+// as column norms, then normalizes to get U.
+//
+// Uses:
+//   - Principal Component Analysis (PCA)
+//   - Low-rank approximation
+//   - Pseudoinverse computation
+//   - Condition number estimation
+//
+// Returns (U, Σ, V, error). Returns ErrEmptyMatrix for empty inputs.
 func (m *Matrix[T]) SVD() (*Matrix[float64], *Matrix[float64], *Matrix[float64], error) {
-	return nil, nil, nil, ErrNotImplemented
+	if m.rows == 0 || m.cols == 0 {
+		return nil, nil, nil, ErrEmptyMatrix
+	}
+
+	a := toFloat64Matrix(m)
+	rows, cols := a.rows, a.cols
+
+	// For m < n: compute SVD of Aᵀ, then swap U and V
+	if rows < cols {
+		at := Transpose(a)
+		uT, sT, vT, err := (&Matrix[float64]{data: at.data, rows: at.rows, cols: at.cols}).SVD()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		return vT, sT, uT, nil
+	}
+
+	// One-sided Jacobi SVD for m >= n
+	// W = A (working copy, columns will become orthogonal)
+	// V accumulates the right rotations
+	k := cols
+	W := a.Copy()
+	V := Identity[float64](k)
+
+	maxSweeps := 100
+	for sweep := 0; sweep < maxSweeps; sweep++ {
+		// Check convergence: off-diagonal of WᵀW ≈ 0
+		converged := true
+		for p := 0; p < k-1; p++ {
+			for q := p + 1; q < k; q++ {
+				// Compute WᵀW[p][q] = dot(col_p, col_q)
+				dot := 0.0
+				for i := 0; i < rows; i++ {
+					dot += W.data[i][p] * W.data[i][q]
+				}
+				// Compute norms² of columns p and q
+				normp2 := 0.0
+				normq2 := 0.0
+				for i := 0; i < rows; i++ {
+					normp2 += W.data[i][p] * W.data[i][p]
+					normq2 += W.data[i][q] * W.data[i][q]
+				}
+				// Check if off-diagonal is negligible
+				if math.Abs(dot) <= Epsilon*math.Sqrt(normp2*normq2) {
+					continue
+				}
+				converged = false
+
+				// Compute Jacobi rotation angle to zero WᵀW[p][q]
+				// The 2x2 symmetric subproblem: [[normp2, dot], [dot, normq2]]
+				tau := (normq2 - normp2) / (2 * dot)
+				var t float64
+				if tau >= 0 {
+					t = 1.0 / (tau + math.Sqrt(1+tau*tau))
+				} else {
+					t = -1.0 / (-tau + math.Sqrt(1+tau*tau))
+				}
+				c := 1.0 / math.Sqrt(1+t*t)
+				s := t * c
+
+				// Apply rotation to columns p, q of W
+				for i := 0; i < rows; i++ {
+					wp := W.data[i][p]
+					wq := W.data[i][q]
+					W.data[i][p] = c*wp - s*wq
+					W.data[i][q] = s*wp + c*wq
+				}
+
+				// Accumulate V: apply rotation to columns p, q of V
+				for i := 0; i < k; i++ {
+					vp := V.data[i][p]
+					vq := V.data[i][q]
+					V.data[i][p] = c*vp - s*vq
+					V.data[i][q] = s*vp + c*vq
+				}
+			}
+		}
+		if converged {
+			break
+		}
+	}
+
+	// Extract singular values (column norms of W) and normalize to get U
+	sigma := Zeros[float64](k, k)
+	U := Zeros[float64](rows, k)
+	for j := 0; j < k; j++ {
+		norm := 0.0
+		for i := 0; i < rows; i++ {
+			norm += W.data[i][j] * W.data[i][j]
+		}
+		norm = math.Sqrt(norm)
+		sigma.data[j][j] = norm
+
+		if norm > Epsilon {
+			for i := 0; i < rows; i++ {
+				U.data[i][j] = W.data[i][j] / norm
+			}
+		}
+	}
+
+	// Sort singular values in descending order
+	for i := 0; i < k-1; i++ {
+		maxIdx := i
+		maxVal := sigma.data[i][i]
+		for j := i + 1; j < k; j++ {
+			if sigma.data[j][j] > maxVal {
+				maxVal = sigma.data[j][j]
+				maxIdx = j
+			}
+		}
+		if maxIdx != i {
+			sigma.data[i][i], sigma.data[maxIdx][maxIdx] = sigma.data[maxIdx][maxIdx], sigma.data[i][i]
+			for r := 0; r < rows; r++ {
+				U.data[r][i], U.data[r][maxIdx] = U.data[r][maxIdx], U.data[r][i]
+			}
+			for r := 0; r < k; r++ {
+				V.data[r][i], V.data[r][maxIdx] = V.data[r][maxIdx], V.data[r][i]
+			}
+		}
+	}
+
+	return U, sigma, V, nil
 }

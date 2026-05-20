@@ -7,12 +7,14 @@ A clean, generic, zero-dependency matrix math package for Go.
 [![codecov](https://codecov.io/gh/Arceus-7/matrix/graph/badge.svg)](https://codecov.io/gh/Arceus-7/matrix)
 [![Go ≥1.21](https://img.shields.io/badge/go-%3E%3D1.21-blue)](https://go.dev/dl)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 ## Features
 
 - **Generic** — works with `int`, `float32`, `float64`, `complex128`, and more
 - **Zero dependencies** — pure Go stdlib only
 - **Immutable by default** — operations return new matrices, never mutate
 - **Numerically stable** — partial pivoting throughout, epsilon-based comparisons
+- **Full decompositions** — LU, QR, Eigen, and SVD out of the box
 - **Well documented** — every function explains the math, not just the code
 
 ## Installation
@@ -74,6 +76,22 @@ _, _, _, _ = sum, diff, product, scaled
 _, _ = transposed, hadamard
 ```
 
+### Accessors
+
+```go
+m := matrix.MustNew([][]float64{
+    {1, 2, 3},
+    {4, 5, 6},
+    {7, 8, 9},
+})
+
+row, _  := m.Row(0)                  // [ 1.0000  2.0000  3.0000 ] (1×3)
+col, _  := m.Col(1)                  // [ 2.0000; 5.0000; 8.0000 ] (3×1)
+sub, _  := m.SubMatrix(0, 2, 0, 2)   // top-left 2×2 block
+
+_, _, _ = row, col, sub
+```
+
 ### Properties
 
 ```go
@@ -94,6 +112,18 @@ isSym      := m.IsSymmetric()     // false
 
 _, _, _, _, _, _, _, _ = rows, cols, val, det, rank, trace, norm, isSquare
 _ = isSym
+```
+
+### Comparison
+
+```go
+a := matrix.MustNew([][]float64{{1, 2}, {3, 4}})
+b := matrix.MustNew([][]float64{{1.0000000001, 2}, {3, 4}})
+
+exact := a.Equals(b)               // false (exact comparison)
+approx := a.ApproxEquals(b, 1e-6)  // true  (within epsilon)
+
+_, _ = exact, approx
 ```
 
 ### Transformations
@@ -121,12 +151,13 @@ m := matrix.MustNew([][]float64{
     {-4, 24, -41},
 })
 
-L, U, _   := m.LU()       // LU decomposition (PA = LU)
-Q, R, _   := m.QR()        // QR decomposition (A = QR)
-eigs, _   := m.Eigen()     // eigenvalues
+L, U, _      := m.LU()        // LU decomposition (PA = LU)
+L, U, P, _   := m.LUP()       // LU with permutation matrix (P*A = L*U)
+Q, R, _      := m.QR()        // QR decomposition (A = QR)
+eigs, _      := m.Eigen()     // eigenvalues
+U2, S, V, _  := m.SVD()       // singular value decomposition (A = U*Σ*Vᵀ)
 
-_, _, _, _ = L, U, Q, R
-_ = eigs
+_, _, _, _, _, _, _, _, _ = L, U, P, Q, R, eigs, U2, S, V
 ```
 
 ### Solving Linear Systems
@@ -195,7 +226,7 @@ var (
     matrix.ErrOutOfBounds        // index out of range
     matrix.ErrEmptyMatrix        // zero rows or columns
     matrix.ErrNotVector          // expected n×1 column vector
-    matrix.ErrNotImplemented     // planned for future version
+    matrix.ErrNotConverged       // iterative algorithm did not converge
 )
 ```
 
@@ -210,22 +241,39 @@ matrix.Epsilon = 1e-12
 
 All elimination-based operations (REF, RREF, Inverse, LU) use **partial pivoting** — they swap rows to place the largest absolute value on the diagonal, reducing numerical error from catastrophic cancellation.
 
+## Benchmarks
+
+Measured on Intel i5-11400F @ 2.60GHz, Go 1.21, Windows 11.
+
+```
+go test -bench . -benchmem -run NOMATCH .
+```
+
+| Operation | 10×10 | 100×100 |
+|-----------|------:|--------:|
+| **Mul** | 1.9 µs / 1.1 KB | 1.6 ms / 92 KB |
+| **LU** | 1.6 µs / 2.3 KB | 466 µs / 186 KB |
+| **QR** | 2.5 µs / 3.3 KB | 1.2 ms / 277 KB |
+| **Solve** | 2.4 µs / 3.2 KB | 519 µs / 195 KB |
+| **Det** | 1.1 µs / 1.1 KB | 645 µs / 92 KB |
+
 ## API Reference
 
 | Category | Functions / Methods |
 |----------|-------------------|
 | **Constructors** | `New`, `MustNew`, `Identity`, `Zeros`, `Ones`, `Random` |
-| **Accessors** | `Shape`, `Rows`, `Cols`, `At`, `Set`, `Copy`, `Data`, `Equals` |
+| **Accessors** | `Shape`, `Rows`, `Cols`, `At`, `Set`, `Copy`, `Data`, `Row`, `Col`, `SubMatrix` |
+| **Comparison** | `Equals`, `ApproxEquals` |
 | **Arithmetic** | `Add`, `Sub`, `Mul`, `Scale`, `Transpose`, `HadamardProduct` |
 | **Properties** | `IsSquare`, `IsSymmetric`, `IsIdentity`, `IsZero`, `Trace`, `Norm`, `Det`, `Rank` |
 | **Transforms** | `REF`, `RREF`, `Inverse` |
-| **Decompositions** | `LU`, `QR`, `Eigen`, `SVD` (planned) |
+| **Decompositions** | `LU`, `LUP`, `QR`, `Eigen`, `SVD` |
 | **Solve** | `Solve` |
 | **Printing** | `String`, `Print`, `PrintWith` |
 
 ## Roadmap
 
-### v1.0 
+### v1.0 ✅
 - [x] Core matrix type with generics
 - [x] Arithmetic operations
 - [x] Determinant, rank, trace, norm
@@ -234,6 +282,22 @@ All elimination-based operations (REF, RREF, Inverse, LU) use **partial pivoting
 - [x] Eigenvalue computation
 - [x] Linear system solver
 - [x] Pretty printing
+
+### v1.1 ✅
+- [x] Epsilon-based comparison (`ApproxEquals`)
+- [x] LU with permutation matrix (`LUP`)
+- [x] SVD (Singular Value Decomposition)
+- [x] Row, column, and submatrix extraction
+- [x] Convergence error reporting for `Eigen`
+- [x] Benchmark suite
+
+### v1.2 (planned)
+- [ ] Eigenvectors
+- [ ] Condition number
+- [ ] Matrix power (`Pow`)
+- [ ] Additional norms (1-norm, ∞-norm)
+- [ ] Kronecker product
+- [ ] `Map` / element-wise apply
 
 ## License
 

@@ -253,6 +253,134 @@ func TestData(t *testing.T) {
 	}
 }
 
+func TestRow(t *testing.T) {
+	m := MustNew([][]float64{{1, 2, 3}, {4, 5, 6}})
+
+	t.Run("valid", func(t *testing.T) {
+		r, err := m.Row(1)
+		if err != nil {
+			t.Fatalf("Row(1) error: %v", err)
+		}
+		expected := MustNew([][]float64{{4, 5, 6}})
+		if !r.Equals(expected) {
+			t.Errorf("Row(1) = %v, want %v", r, expected)
+		}
+	})
+
+	t.Run("out of bounds", func(t *testing.T) {
+		_, err := m.Row(2)
+		if err != ErrOutOfBounds {
+			t.Errorf("expected ErrOutOfBounds, got %v", err)
+		}
+		_, err = m.Row(-1)
+		if err != ErrOutOfBounds {
+			t.Errorf("expected ErrOutOfBounds for -1, got %v", err)
+		}
+	})
+
+	t.Run("deep copy", func(t *testing.T) {
+		r, _ := m.Row(0)
+		r.Set(0, 0, 999)
+		val, _ := m.At(0, 0)
+		if val != 1 {
+			t.Error("modifying Row result affected original")
+		}
+	})
+}
+
+func TestCol(t *testing.T) {
+	m := MustNew([][]float64{{1, 2}, {3, 4}, {5, 6}})
+
+	t.Run("valid", func(t *testing.T) {
+		c, err := m.Col(1)
+		if err != nil {
+			t.Fatalf("Col(1) error: %v", err)
+		}
+		expected := MustNew([][]float64{{2}, {4}, {6}})
+		if !c.Equals(expected) {
+			t.Errorf("Col(1) = %v, want %v", c, expected)
+		}
+	})
+
+	t.Run("out of bounds", func(t *testing.T) {
+		_, err := m.Col(2)
+		if err != ErrOutOfBounds {
+			t.Errorf("expected ErrOutOfBounds, got %v", err)
+		}
+	})
+}
+
+func TestSubMatrix(t *testing.T) {
+	m := MustNew([][]float64{
+		{1, 2, 3},
+		{4, 5, 6},
+		{7, 8, 9},
+	})
+
+	t.Run("2x2 from top-left", func(t *testing.T) {
+		sub, err := m.SubMatrix(0, 2, 0, 2)
+		if err != nil {
+			t.Fatalf("SubMatrix error: %v", err)
+		}
+		expected := MustNew([][]float64{{1, 2}, {4, 5}})
+		if !sub.Equals(expected) {
+			t.Errorf("SubMatrix(0,2,0,2) = %v, want %v", sub, expected)
+		}
+	})
+
+	t.Run("2x2 from bottom-right", func(t *testing.T) {
+		sub, err := m.SubMatrix(1, 3, 1, 3)
+		if err != nil {
+			t.Fatalf("SubMatrix error: %v", err)
+		}
+		expected := MustNew([][]float64{{5, 6}, {8, 9}})
+		if !sub.Equals(expected) {
+			t.Errorf("SubMatrix(1,3,1,3) = %v, want %v", sub, expected)
+		}
+	})
+
+	t.Run("single element", func(t *testing.T) {
+		sub, err := m.SubMatrix(1, 2, 1, 2)
+		if err != nil {
+			t.Fatalf("SubMatrix error: %v", err)
+		}
+		val, _ := sub.At(0, 0)
+		if val != 5 {
+			t.Errorf("SubMatrix(1,2,1,2)[0][0] = %f, want 5", val)
+		}
+	})
+
+	t.Run("full matrix", func(t *testing.T) {
+		sub, err := m.SubMatrix(0, 3, 0, 3)
+		if err != nil {
+			t.Fatalf("SubMatrix error: %v", err)
+		}
+		if !sub.Equals(m) {
+			t.Error("SubMatrix of entire matrix should equal original")
+		}
+	})
+
+	t.Run("out of bounds", func(t *testing.T) {
+		_, err := m.SubMatrix(0, 4, 0, 3)
+		if err != ErrOutOfBounds {
+			t.Errorf("expected ErrOutOfBounds, got %v", err)
+		}
+		_, err = m.SubMatrix(2, 1, 0, 3)
+		if err != ErrOutOfBounds {
+			t.Errorf("expected ErrOutOfBounds for r0 >= r1, got %v", err)
+		}
+	})
+
+	t.Run("deep copy", func(t *testing.T) {
+		sub, _ := m.SubMatrix(0, 2, 0, 2)
+		sub.Set(0, 0, 999)
+		val, _ := m.At(0, 0)
+		if val != 1 {
+			t.Error("modifying SubMatrix result affected original")
+		}
+	})
+}
+
 func TestEquals(t *testing.T) {
 	a := MustNew([][]int{{1, 2}, {3, 4}})
 	b := MustNew([][]int{{1, 2}, {3, 4}})
@@ -268,6 +396,40 @@ func TestEquals(t *testing.T) {
 	if a.Equals(d) {
 		t.Error("different-shaped matrices should not be equal")
 	}
+}
+
+func TestApproxEquals(t *testing.T) {
+	t.Run("exactly equal", func(t *testing.T) {
+		a := MustNew([][]float64{{1, 2}, {3, 4}})
+		b := MustNew([][]float64{{1, 2}, {3, 4}})
+		if !a.ApproxEquals(b, 1e-9) {
+			t.Error("identical matrices should be approx equal")
+		}
+	})
+
+	t.Run("near equal within eps", func(t *testing.T) {
+		a := MustNew([][]float64{{1.0, 2.0}, {3.0, 4.0}})
+		b := MustNew([][]float64{{1.0000000001, 2.0000000001}, {3.0000000001, 4.0000000001}})
+		if !a.ApproxEquals(b, 1e-6) {
+			t.Error("near-equal matrices should be approx equal within eps")
+		}
+	})
+
+	t.Run("beyond eps", func(t *testing.T) {
+		a := MustNew([][]float64{{1, 2}, {3, 4}})
+		b := MustNew([][]float64{{1.1, 2}, {3, 4}})
+		if a.ApproxEquals(b, 1e-9) {
+			t.Error("matrices differing by > eps should not be approx equal")
+		}
+	})
+
+	t.Run("different shapes", func(t *testing.T) {
+		a := MustNew([][]float64{{1, 2}})
+		b := MustNew([][]float64{{1}, {2}})
+		if a.ApproxEquals(b, 1e-9) {
+			t.Error("different-shaped matrices should not be approx equal")
+		}
+	})
 }
 
 // ─── Arithmetic Tests ────────────────────────────────────────────────
@@ -893,6 +1055,56 @@ func TestLU(t *testing.T) {
 	})
 }
 
+func TestLUP(t *testing.T) {
+	t.Run("PA = LU for 3x3", func(t *testing.T) {
+		m := MustNew([][]float64{
+			{2, -1, -2},
+			{-4, 6, 3},
+			{-4, -2, 8},
+		})
+		L, U, P, err := m.LUP()
+		if err != nil {
+			t.Fatalf("LUP error: %v", err)
+		}
+
+		// Verify P*A = L*U
+		mf := toFloat64Matrix(m)
+		pa, err := Mul(P, mf)
+		if err != nil {
+			t.Fatalf("Mul(P, A) error: %v", err)
+		}
+		lu, err := Mul(L, U)
+		if err != nil {
+			t.Fatalf("Mul(L, U) error: %v", err)
+		}
+		if !matApproxEqual(pa, lu, 1e-9) {
+			t.Errorf("P*A ≠ L*U\nP*A:\n%v\nL*U:\n%v", pa, lu)
+		}
+	})
+
+	t.Run("PA = LU for 2x2", func(t *testing.T) {
+		m := MustNew([][]float64{{1, 2}, {3, 4}})
+		L, U, P, err := m.LUP()
+		if err != nil {
+			t.Fatalf("LUP error: %v", err)
+		}
+		mf := toFloat64Matrix(m)
+		pa, _ := Mul(P, mf)
+		lu, _ := Mul(L, U)
+		if !matApproxEqual(pa, lu, 1e-9) {
+			t.Errorf("P*A ≠ L*U")
+		}
+	})
+
+	t.Run("singular", func(t *testing.T) {
+		m := MustNew([][]float64{{1, 2}, {2, 4}})
+		_, _, _, err := m.LUP()
+		if err != ErrSingular {
+			t.Errorf("expected ErrSingular, got %v", err)
+		}
+	})
+}
+
 func TestQR(t *testing.T) {
 	t.Run("3x3", func(t *testing.T) {
 		m := MustNew([][]float64{
@@ -1036,11 +1248,137 @@ func TestEigen(t *testing.T) {
 }
 
 func TestSVD(t *testing.T) {
-	m := MustNew([][]float64{{1, 2}, {3, 4}})
-	_, _, _, err := m.SVD()
-	if err != ErrNotImplemented {
-		t.Errorf("expected ErrNotImplemented, got %v", err)
-	}
+	t.Run("2x2 reconstruction", func(t *testing.T) {
+		m := MustNew([][]float64{{1, 2}, {3, 4}})
+		U, S, V, err := m.SVD()
+		if err != nil {
+			t.Fatalf("SVD error: %v", err)
+		}
+
+		// Verify U * S * Vᵀ ≈ A
+		sv, _ := Mul(U, S)
+		vt := Transpose(V)
+		result, _ := Mul(sv, vt)
+		mf := toFloat64Matrix(m)
+		if !matApproxEqual(result, mf, 1e-6) {
+			t.Errorf("U*Σ*Vᵀ ≠ A\ngot:\n%v\nwant:\n%v", result, mf)
+		}
+	})
+
+	t.Run("3x3 reconstruction", func(t *testing.T) {
+		m := MustNew([][]float64{
+			{12, -51, 4},
+			{6, 167, -68},
+			{-4, 24, -41},
+		})
+		U, S, V, err := m.SVD()
+		if err != nil {
+			t.Fatalf("SVD error: %v", err)
+		}
+
+		// Verify U * S * Vᵀ ≈ A
+		sv, _ := Mul(U, S)
+		vt := Transpose(V)
+		result, _ := Mul(sv, vt)
+		mf := toFloat64Matrix(m)
+		if !matApproxEqual(result, mf, 1e-6) {
+			t.Errorf("U*Σ*Vᵀ ≠ A\ngot:\n%v\nwant:\n%v", result, mf)
+		}
+
+		// Verify orthogonality: UᵀU ≈ I
+		ut := Transpose(U)
+		utu, _ := Mul(ut, U)
+		id := Identity[float64](U.cols)
+		if !matApproxEqual(utu, id, 1e-6) {
+			t.Errorf("UᵀU ≠ I\ngot:\n%v", utu)
+		}
+
+		// Verify orthogonality: VᵀV ≈ I
+		vtv, _ := Mul(vt, V)
+		id2 := Identity[float64](V.cols)
+		if !matApproxEqual(vtv, id2, 1e-6) {
+			t.Errorf("VᵀV ≠ I\ngot:\n%v", vtv)
+		}
+
+		// Verify singular values are non-negative and descending
+		for i := 0; i < S.rows; i++ {
+			if S.data[i][i] < 0 {
+				t.Errorf("singular value S[%d][%d] = %f < 0", i, i, S.data[i][i])
+			}
+			if i > 0 && S.data[i][i] > S.data[i-1][i-1] {
+				t.Errorf("singular values not descending: S[%d]=%f > S[%d]=%f",
+					i, S.data[i][i], i-1, S.data[i-1][i-1])
+			}
+		}
+	})
+
+	t.Run("rectangular 3x2", func(t *testing.T) {
+		m := MustNew([][]float64{
+			{1, 2},
+			{3, 4},
+			{5, 6},
+		})
+		U, S, V, err := m.SVD()
+		if err != nil {
+			t.Fatalf("SVD error: %v", err)
+		}
+
+		// Verify U * S * Vᵀ ≈ A
+		sv, _ := Mul(U, S)
+		vt := Transpose(V)
+		result, _ := Mul(sv, vt)
+		mf := toFloat64Matrix(m)
+		if !matApproxEqual(result, mf, 1e-6) {
+			t.Errorf("U*Σ*Vᵀ ≠ A for 3×2 matrix\ngot:\n%v\nwant:\n%v", result, mf)
+		}
+	})
+
+	t.Run("rectangular 2x3", func(t *testing.T) {
+		m := MustNew([][]float64{
+			{1, 2, 3},
+			{4, 5, 6},
+		})
+		U, S, V, err := m.SVD()
+		if err != nil {
+			t.Fatalf("SVD error: %v", err)
+		}
+
+		// Verify U * S * Vᵀ ≈ A
+		sv, _ := Mul(U, S)
+		vt := Transpose(V)
+		result, _ := Mul(sv, vt)
+		mf := toFloat64Matrix(m)
+		if !matApproxEqual(result, mf, 1e-6) {
+			t.Errorf("U*Σ*Vᵀ ≠ A for 2×3 matrix\ngot:\n%v\nwant:\n%v", result, mf)
+		}
+	})
+
+	t.Run("1x1", func(t *testing.T) {
+		m := MustNew([][]float64{{5}})
+		U, S, V, err := m.SVD()
+		if err != nil {
+			t.Fatalf("SVD error: %v", err)
+		}
+		if !approxEqual(S.data[0][0], 5, 1e-9) {
+			t.Errorf("singular value of [[5]] = %f, want 5", S.data[0][0])
+		}
+		_ = U
+		_ = V
+	})
+
+	t.Run("identity", func(t *testing.T) {
+		m := Identity[float64](3)
+		_, S, _, err := m.SVD()
+		if err != nil {
+			t.Fatalf("SVD error: %v", err)
+		}
+		// All singular values should be 1
+		for i := 0; i < 3; i++ {
+			if !approxEqual(S.data[i][i], 1.0, 1e-6) {
+				t.Errorf("singular value S[%d] = %f, want 1.0", i, S.data[i][i])
+			}
+		}
+	})
 }
 
 // ─── Solve Tests ─────────────────────────────────────────────────────
